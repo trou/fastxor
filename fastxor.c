@@ -2,16 +2,21 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
+#include <malloc.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/mman.h>
-#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#ifdef _SSE2
+    #include <emmintrin.h>
+#endif
 
 void errmsg(const char *error)
 {
@@ -42,6 +47,69 @@ int hex2bin(const char *hex, int len, uint8_t *bin)
         }
     }
     return i;
+}
+
+void do_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off_t keylen)
+{
+#ifdef _SSE2
+    int sse2 = 0;
+    uint8_t *realkey = NULL;
+
+    /* Heuristic, don't optimize for files smaller than 1 MB */
+    if(len < 1024*1024)
+        goto next;
+
+    __builtin_cpu_init ();
+    sse2  = __builtin_cpu_supports("sse2");
+    if(!sse2)
+        goto next;
+
+    /* First simple case : key is smaller than 16 bytes and 16%keysize == 0 */
+    if (keylen <= 16 && 16%keylen == 0) {
+        realkey = (uint8_t *)memalign(16, 16);
+        for(int i = 0; i<(16/keylen); i++)
+            memcpy(&realkey[i*keylen], key, keylen);
+    } else {
+        // TODO : implement more cases
+        goto next;
+    }
+
+    printf("Using fast (SSE2) xor\n");
+
+    off_t len_align = len-(len%16);
+
+    /* Make sure we don't go too far */
+    const __m128i *from_ptr = (__m128i *)from;
+    const __m128i *from_end = (__m128i *)(from + len_align);
+
+    __m128i *to_ptr = (__m128i *)to;
+    __m128i xmm_key = _mm_load_si128((__m128i *)realkey);
+
+    do {
+        __m128i tmp_from = _mm_load_si128(from_ptr);
+
+        __m128i tmp_xor = _mm_xor_si128(tmp_from, xmm_key); //  XOR  4 32-bit words
+        _mm_store_si128(to_ptr, tmp_xor);
+
+        ++from_ptr;
+        ++to_ptr;
+    } while (from_ptr < from_end);
+
+    /* do the rest */
+    for(off_t i = len_align; i < len; i++) {
+        to[i] = from[i] ^ key[i%keylen];
+    }
+
+    free(realkey);
+    return;
+
+next:
+#else
+#endif
+    for(off_t i = 0; i < len; i++) {
+        to[i] = from[i] ^ key[i%keylen];
+    }
+    return;
 }
 
 int main(int argc, char *argv[])
@@ -135,9 +203,8 @@ int main(int argc, char *argv[])
         errmsg("could not mmap output file");
     }
 
-    for(off_t i = 0; i < file_size; i++) {
-        output_map[i] = mapped[i] ^ key[i%keylen];    
-    }
+    do_xor(mapped, output_map, file_size, key, keylen);
+
     munmap(mapped, file_size);
     close(input_fd);
     munmap(output_map, file_size);
