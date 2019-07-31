@@ -119,7 +119,7 @@ int main(int argc, char *argv[])
     int verb = 0, fd;
     off_t file_size;
 
-    while ((opt = getopt(argc, argv, "vx:f:")) != -1) {
+    while ((opt = getopt(argc, argv, "hvx:f:")) != -1) {
         switch (opt) {
         /* Hex key on command line */
         case 'x':
@@ -165,6 +165,7 @@ int main(int argc, char *argv[])
         case 'v':
             verb = 1;
             break;
+        case 'h':
         default: /* '?' */
             errmsg(NULL);
         }
