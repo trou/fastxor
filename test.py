@@ -10,17 +10,20 @@ from random import randint as rand
 def do_python(data, key):
     return bytes([b^key[i%len(key)] for i, b in enumerate(data)])
 
-def do_fastxor(data, key):
+def do_fastxor(data, key, buffered=False):
     tmp_out = tempfile.mktemp()
     with tempfile.NamedTemporaryFile() as temp:
         temp.write(data)
         temp.flush()
-        subprocess.run(['./fastxor', '-x', hexlify(key).decode("ascii"), temp.name, tmp_out])
+        args = ['./fastxor', '-x', hexlify(key).decode("ascii"), temp.name, tmp_out]
+        if buffered:
+            args.append('-b')
+        subprocess.run(args)
     res = open(tmp_out, 'rb').read()
     os.unlink(tmp_out)
     return res
 
-def do_fastxor_file(data, key):
+def do_fastxor_file(data, key, buffered=False):
     tmp_out = tempfile.mktemp()
     with tempfile.NamedTemporaryFile() as keyfile:
         keyfile.write(key)
@@ -28,7 +31,10 @@ def do_fastxor_file(data, key):
         with tempfile.NamedTemporaryFile() as temp:
             temp.write(data)
             temp.flush()
-            subprocess.run(['./fastxor', '-f', keyfile.name, temp.name, tmp_out])
+            args = ['./fastxor', '-f', keyfile.name, temp.name, tmp_out]
+            if buffered:
+                args.append('-b')
+            subprocess.run(args)
     res = open(tmp_out, 'rb').read()
     os.unlink(tmp_out)
     return res
@@ -42,6 +48,14 @@ def do_test(data, key):
         fx = py
     fxf = do_fastxor_file(data, key)
     print("%r\t%r\t%6d data\t%6d key" % (py==fx, py==fxf, len(data), len(key), ))
+    if py != fx or py != fxf:
+        sys.exit(1)
+    if(len(key) < 10000):
+        fx = do_fastxor(data, key, True)
+    else:
+        fx = py
+    fxf = do_fastxor_file(data, key, True)
+    print("%r\t%r\t%6d data\t%6d key (buffered)" % (py==fx, py==fxf, len(data), len(key), ))
     if py != fx or py != fxf:
         sys.exit(1)
 

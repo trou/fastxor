@@ -265,10 +265,13 @@ int main(int argc, char *argv[])
 {
     uint8_t *key = NULL, *mapped;
     size_t hex_keylen = 0, keylen = 0;
-    int fd, opt;
+    int fd, opt, force_buffered = 0;
 
-    while ((opt = getopt(argc, argv, "hvx:f:")) != -1) {
+    while ((opt = getopt(argc, argv, "bhvx:f:")) != -1) {
         switch (opt) {
+        case 'b':
+            force_buffered = 1;
+            break;
         /* Hex key on command line */
         case 'x':
             hex_keylen = strlen(optarg);
@@ -338,7 +341,7 @@ int main(int argc, char *argv[])
     }
 
 
-    if(!strcmp(argv[optind], "-") || !strcmp(argv[optind+1], "-")) {
+    if(force_buffered || !strcmp(argv[optind], "-") || !strcmp(argv[optind+1], "-")) {
         do_buffers(key, keylen, argv[optind], argv[optind+1]);
     } else {
         do_mmap(key, keylen, argv[optind], argv[optind+1]);
