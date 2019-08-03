@@ -18,6 +18,16 @@
     #include <emmintrin.h>
 #endif
 
+/* Need to define WSIZE so that if __WORDSIZE is not defined, WSIZZ will be 0 */
+#define WSIZE __WORDSIZE
+#if WSIZE == 64
+    typedef unsigned long long *data_ptr;
+    typedef unsigned long long word_type;
+#else
+    typedef unsigned long *data_ptr;
+    typedef unsigned long word_type;
+#endif
+
 void errmsg(const char *error)
 {
     if (error) {
@@ -61,42 +71,25 @@ int gcd(int m, int n) {
 
 int lcm(int m, int n) { return m / gcd(m, n) * n; }
 
-
-void do_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off_t keylen)
+void do_simple_xor(int use_sse, const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off_t keylen)
 {
-    uint8_t *realkey = NULL;
+    off_t len_align = len-(len%keylen);
+    data_ptr to_wptr = (data_ptr)to;
+    data_ptr from_wptr = (data_ptr)from;
+    data_ptr from_end = (data_ptr)(from+len_align);
+    word_type key_word = *((data_ptr)key);
+
 #ifdef _SSE2
-    int sse2 = 0;
-
-    /* Heuristic, don't optimize for files smaller than 1 MB */
-    if(len < 1024*1024)
+    if(!use_sse)
         goto next;
-
-    __builtin_cpu_init ();
-    sse2  = __builtin_cpu_supports("sse2");
-    if(!sse2)
-        goto next;
-
-    /* First simple case : key is smaller than 16 bytes and 16%keysize == 0 */
-    if (keylen <= 16 && 16%keylen == 0) {
-        realkey = (uint8_t *)memalign(16, 16);
-        for(int i = 0; i<(16/keylen); i++)
-            memcpy(&realkey[i*keylen], key, keylen);
-    } else {
-        // TODO : implement more cases
-        goto next;
-    }
-
-    printf("Using fast (SSE2) xor\n");
-
-    off_t len_align = len-(len%16);
 
     /* Make sure we don't go too far */
     const __m128i *from_ptr = (__m128i *)from;
-    const __m128i *from_end = (__m128i *)(from + len_align);
+    const __m128i *from_end_sse = (__m128i *)(from + len_align);
 
+    printf("Using fast (SSE2) xor\n");
     __m128i *to_ptr = (__m128i *)to;
-    __m128i xmm_key = _mm_load_si128((__m128i *)realkey);
+    __m128i xmm_key = _mm_load_si128((__m128i *)key);
 
     do {
         __m128i tmp_from = _mm_load_si128(from_ptr);
@@ -106,74 +99,71 @@ void do_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off
 
         ++from_ptr;
         ++to_ptr;
-    } while (from_ptr < from_end);
+    } while (from_ptr < from_end_sse);
 
+    goto end;
+next:
+#endif
+
+    while(from_wptr < from_end)
+        *to_wptr++ = *from_wptr++ ^ key_word;
+
+#ifdef _SSE2
+end:
+#endif
     /* do the rest */
     for(off_t i = len_align; i < len; i++) {
         to[i] = from[i] ^ key[i%keylen];
     }
-
-    free(realkey);
     return;
+}
 
-next:
-#else
-#endif
-
-/* Need to define WSIZE so that if __WORDSIZE is not defined, WSIZZ will be 0 */
-#define WSIZE __WORDSIZE
-#if WSIZE == 64
-    typedef unsigned long long *data_ptr;
-#else
-    typedef unsigned long *data_ptr;
-#endif
+void do_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off_t keylen)
+{
+    uint8_t *realkey = NULL;
     data_ptr to_wptr = (data_ptr)to;
     data_ptr from_wptr = (data_ptr)from;
-    data_ptr key_wptr = NULL;
-    off_t word_size = sizeof(*to_wptr);
+    data_ptr key_wptr = (data_ptr)key;
+    off_t word_size = sizeof(word_type);
+    int sse2 = 0;
 
-    if(keylen < word_size) {
-        int size = lcm(word_size, keylen);
-        realkey = (uint8_t *)memalign(16, size);
-        printf("Key is too short, spanning to %d bytes\n", size);
-        for(int i = 0; i < size/keylen; i++)
-            memcpy(realkey+i*keylen, key, keylen);
-        keylen = size;
-        key_wptr = (data_ptr)realkey;
-    } else {
-        key_wptr = (data_ptr)key;
+
+#ifdef _SSE2
+    __builtin_cpu_init ();
+    sse2  = __builtin_cpu_supports("sse2");
+    if(sse2)
+        word_size = sizeof(__m128i);
+#endif
+
+    /* First simple case : key is smaller than word size and word_size%keysize == 0 */
+    if (keylen <= word_size && word_size%keylen == 0) {
+        realkey = (uint8_t *)memalign(16, word_size);
+        for(int i = 0; i<(word_size/keylen); i++)
+            memcpy(&realkey[i*keylen], key, keylen);
+        do_simple_xor(sse2, from, to, len, realkey, word_size);
+        free(realkey);
+        return;
     }
 
     off_t keylen_in_words = keylen/word_size;
     off_t key_remain = keylen%word_size;
 
-    printf("Using word_size=%ld, remaining: %ld\n", word_size, key_remain);
-    /* If we have a nice key len, we can xor directly word by word*/
-    if (key_remain == 0) {
-        for(off_t i = 0; i < len/word_size; i++) {
-            to_wptr[i] = from_wptr[i] ^ key_wptr[i%keylen_in_words];
-        }
-    } else {
-        off_t i, j;
-        uint8_t *end = to+len;
-        uint8_t *start = to;
-        printf("'Slow' path: keylen = %d, keylen_in_words = %d\n", keylen, keylen_in_words);
+    off_t i, j;
+    uint8_t *end = to+len;
+    printf("'Slow' path: keylen = %ld, keylen_in_words = %ld, rem=%ld\n", keylen, keylen_in_words, key_remain);
 
-        while((uint8_t *)to_wptr < end) {
-            /* Do the words */
-            for(i = 0; i < keylen_in_words && (uint8_t *)to_wptr < end; i++) {
-                *to_wptr++ = *from_wptr++ ^ key_wptr[i];
-            }
-            printf("%x\n", (uint8_t*)to_wptr-start);
-            /* Remaining bytes */
-            to = (uint8_t *)to_wptr;
-            from = (uint8_t *)from_wptr;
-            for(j = 0; j < key_remain && (&to[j]) < end; j++)
-                to[j] = from[j] ^ key[i*word_size+j];
-            to_wptr = (data_ptr)(to+j);
-            printf("lol :%x\n", (uint8_t*)to_wptr-start);
-            from_wptr = (data_ptr)(from+j);
+    while((uint8_t *)to_wptr < end) {
+        /* Do the words */
+        for(i = 0; i < keylen_in_words && (uint8_t *)to_wptr < end; i++) {
+            *to_wptr++ = *from_wptr++ ^ key_wptr[i];
         }
+        /* Remaining bytes */
+        to = (uint8_t *)to_wptr;
+        from = (uint8_t *)from_wptr;
+        for(j = 0; j < key_remain && (&to[j]) < end; j++)
+            to[j] = from[j] ^ key[i*word_size+j];
+        to_wptr = (data_ptr)(to+j);
+        from_wptr = (data_ptr)(from+j);
     }
     return;
 }
