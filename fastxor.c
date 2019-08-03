@@ -189,6 +189,11 @@ int main(int argc, char *argv[])
         }
     }
 
+    if (keylen == 0) {
+        free(key);
+        errmsg("Missing key, or empty key");
+    }
+
     if(argc-optind != 2)    {
         free(key);
         errmsg("Missing file arguments");
