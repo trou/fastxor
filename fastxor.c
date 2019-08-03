@@ -24,6 +24,8 @@
     typedef unsigned long word_type;
 #endif
 
+int verbose = 0;
+
 void errmsg(const char *error)
 {
     if (error) {
@@ -108,7 +110,9 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
 
     size_t i, j;
     uint8_t *end = to+len;
-    printf("'Slow' path: keylen = %ld, keylen_in_words = %ld, rem=%ld\n", keylen, keylen_in_words, key_remain);
+    if(verbose) {
+        printf("'Slow' path: keylen = %ld, keylen_in_words = %ld, rem=%ld\n", keylen, keylen_in_words, key_remain);
+    }
 
     while((uint8_t *)to_wptr < end) {
         /* Do the words */
@@ -130,7 +134,7 @@ int main(int argc, char *argv[])
 {
     uint8_t *key = NULL, *mapped = NULL, *output_map = NULL;
     size_t hex_keylen = 0, keylen = 0;
-    int verb = 0, fd, opt;
+    int fd, opt;
     size_t file_size;
 
     while ((opt = getopt(argc, argv, "hvx:f:")) != -1) {
@@ -177,7 +181,7 @@ int main(int argc, char *argv[])
             close(fd);
             break;
         case 'v':
-            verb = 1;
+            verbose = 1;
             break;
         case 'h':
         default: /* '?' */
@@ -218,7 +222,7 @@ int main(int argc, char *argv[])
         errmsg("could not mmap output file");
     }
 
-    if (verb) {
+    if (verbose) {
         printf("Key (%ld bytes): ", keylen);
         for (size_t i = 0; i < keylen; i++) {
             printf("%02x", key[i]);
