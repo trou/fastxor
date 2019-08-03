@@ -112,7 +112,7 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
 
     if  (lcm_size < 512*1024) {
         if(verbose) {
-            printf("lcm_size is %ld, doing copies of key\n", lcm_size);
+            fprintf(stderr, "lcm_size is %ld, doing copies of key\n", lcm_size);
         }
         realkey = (uint8_t *)memalign(16, lcm_size);
         for(size_t i = 0; i<(lcm_size/keylen); i++)
@@ -122,7 +122,7 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
         keylen = lcm_size;
     } else {
         if(verbose) {
-            printf("lcm_size is %ld, too big for copies\n", lcm_size);
+            fprintf(stderr, "lcm_size is %ld, too big for copies\n", lcm_size);
         }
     }
 
@@ -137,7 +137,7 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
     size_t next_word = lcm(keylen, word_size)-(keylen-(keylen%word_size));
 
     if(verbose) {
-        printf("'Slow' path: keylen = %ld, keylen_in_words = %ld, rem=%ld, next_word=%ld\n",
+        fprintf(stderr, "'Slow' path: keylen = %ld, keylen_in_words = %ld, rem=%ld, next_word=%ld\n",
                 keylen, keylen_in_words, keylen%word_size, next_word);
     }
 
@@ -166,12 +166,106 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
     return;
 }
 
+void do_mmap(uint8_t *key, size_t keylen, char *input, char *output)
+{
+    uint8_t *mapped = NULL, *output_map = NULL;
+    size_t file_size;
+
+    int input_fd = open(input, O_RDONLY);
+    if(input_fd < 0) {
+        free(key);
+        errmsg("Could not open input file");
+    }
+    file_size = (size_t)lseek(input_fd, 0, SEEK_END);
+    mapped = mmap(0, file_size, PROT_READ, MAP_PRIVATE, input_fd, 0);
+    if(mapped == MAP_FAILED) {
+        free(key);
+        errmsg("could not mmap input file");
+    }
+
+    int output_fd = open(output, O_RDWR|O_CREAT, 00600);
+    if(output_fd < 0) {
+        free(key);
+        errmsg("Could not open output file");
+    }
+    /* Set file size */
+    if(ftruncate(output_fd, (off_t)file_size) < 0) {
+        free(key);
+        errmsg("could not resize output file");
+    }
+    output_map = mmap(0, file_size, PROT_READ|PROT_WRITE, MAP_SHARED, output_fd, 0);
+    if(output_map == MAP_FAILED) {
+        free(key);
+        errmsg("could not mmap output file");
+    }
+
+    do_xor(mapped, output_map, file_size, key, keylen);
+
+    munmap(mapped, file_size);
+    close(input_fd);
+    munmap(output_map, file_size);
+    close(output_fd);
+
+    return;
+}
+
+void do_buffers(uint8_t *key, size_t keylen, char *input, char *output)
+{
+    size_t buff_len = 0, nbread;
+    FILE *input_f = NULL, *output_f = NULL;
+    uint8_t *buffer_in = NULL, *buffer_out = NULL;
+    size_t word_size = sizeof(word_type);
+
+    if(strcmp(input, "-")) {
+        input_f = fopen(input, "rb");
+    } else {
+        input_f = stdin;
+    }
+    if(input_f == NULL) {
+        free(key);
+        errmsg("Could not open input file");
+    }
+
+    if(strcmp(output, "-")) {
+        output_f = fopen(output, "wb+");
+    } else {
+        output_f = stdout;
+    }
+
+    if(output_f == NULL) {
+        free(key);
+        errmsg("Could not open output file");
+    }
+
+    /* Make buffer a multiple of word size */
+    size_t lcm_size = lcm(keylen, word_size);
+    buff_len = lcm_size < 1024*1024 ? lcm_size : 1024*1024;
+
+    buffer_in = (uint8_t *)malloc(buff_len);
+    buffer_out = (uint8_t *)malloc(buff_len);
+    if(buffer_in == NULL || buffer_out == NULL) {
+        errmsg("buffer malloc failed");
+    }
+
+    while(!ferror(input_f) && !feof(input_f)) {
+        nbread = fread(buffer_in, 1, buff_len, input_f);
+        do_xor(buffer_in, buffer_out, nbread, key, keylen);
+        fwrite(buffer_out, 1, nbread, output_f);
+    }
+
+
+    free(buffer_in);
+    free(buffer_out);
+    fclose(input_f);
+    fclose(output_f);
+    return;
+}
+
 int main(int argc, char *argv[])
 {
-    uint8_t *key = NULL, *mapped = NULL, *output_map = NULL;
+    uint8_t *key = NULL, *mapped;
     size_t hex_keylen = 0, keylen = 0;
     int fd, opt;
-    size_t file_size;
 
     while ((opt = getopt(argc, argv, "hvx:f:")) != -1) {
         switch (opt) {
@@ -235,48 +329,21 @@ int main(int argc, char *argv[])
         errmsg("Missing file arguments");
     }
 
-    int input_fd = open(argv[optind], O_RDONLY);
-    if(input_fd < 0) {
-        free(key);
-        errmsg("Could not open input file");
-    }
-    file_size = (size_t)lseek(input_fd, 0, SEEK_END);
-    mapped = mmap(0, file_size, PROT_READ, MAP_PRIVATE, input_fd, 0);
-    if(mapped == MAP_FAILED) {
-        free(key);
-        errmsg("could not mmap input file");
-    }
-
-    int output_fd = open(argv[optind+1], O_RDWR|O_CREAT, 00600);
-    if(output_fd < 0) {
-        free(key);
-        errmsg("Could not open output file");
-    }
-    /* Set file size */
-    if(ftruncate(output_fd, (off_t)file_size) < 0) {
-        free(key);
-        errmsg("could not resize output file");
-    }
-    output_map = mmap(0, file_size, PROT_READ|PROT_WRITE, MAP_SHARED, output_fd, 0);
-    if(output_map == MAP_FAILED) {
-        free(key);
-        errmsg("could not mmap output file");
-    }
-
     if (verbose) {
-        printf("Key (%ld bytes): ", keylen);
+        fprintf(stderr, "Key (%ld bytes): ", keylen);
         for (size_t i = 0; i < keylen; i++) {
-            printf("%02x", key[i]);
+            fprintf(stderr, "%02x", key[i]);
         }
-        printf("\n");
+        fprintf(stderr, "\n");
     }
 
-    do_xor(mapped, output_map, file_size, key, keylen);
 
-    munmap(mapped, file_size);
-    close(input_fd);
-    munmap(output_map, file_size);
-    close(output_fd);
+    if(!strcmp(argv[optind], "-") || !strcmp(argv[optind+1], "-")) {
+        do_buffers(key, keylen, argv[optind], argv[optind+1]);
+    } else {
+        do_mmap(key, keylen, argv[optind], argv[optind+1]);
+    }
+
 
 
     free(key);
