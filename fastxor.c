@@ -14,10 +14,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#ifdef _SSE2
-    #include <emmintrin.h>
-#endif
-
 /* Need to define WSIZE so that if __WORDSIZE is not defined, WSIZZ will be 0 */
 #define WSIZE __WORDSIZE
 #if WSIZE == 64
@@ -71,7 +67,7 @@ int gcd(int m, int n) {
 
 int lcm(int m, int n) { return m / gcd(m, n) * n; }
 
-void do_simple_xor(int use_sse, const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off_t keylen)
+void do_simple_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off_t keylen)
 {
     off_t len_align = len-(len%keylen);
     data_ptr to_wptr = (data_ptr)to;
@@ -79,38 +75,9 @@ void do_simple_xor(int use_sse, const uint8_t *from, uint8_t *to, off_t len, con
     data_ptr from_end = (data_ptr)(from+len_align);
     word_type key_word = *((data_ptr)key);
 
-#ifdef _SSE2
-    if(!use_sse)
-        goto next;
-
-    /* Make sure we don't go too far */
-    const __m128i *from_ptr = (__m128i *)from;
-    const __m128i *from_end_sse = (__m128i *)(from + len_align);
-
-    printf("Using fast (SSE2) xor\n");
-    __m128i *to_ptr = (__m128i *)to;
-    __m128i xmm_key = _mm_load_si128((__m128i *)key);
-
-    do {
-        __m128i tmp_from = _mm_load_si128(from_ptr);
-
-        __m128i tmp_xor = _mm_xor_si128(tmp_from, xmm_key); //  XOR  4 32-bit words
-        _mm_store_si128(to_ptr, tmp_xor);
-
-        ++from_ptr;
-        ++to_ptr;
-    } while (from_ptr < from_end_sse);
-
-    goto end;
-next:
-#endif
-
     while(from_wptr < from_end)
         *to_wptr++ = *from_wptr++ ^ key_word;
 
-#ifdef _SSE2
-end:
-#endif
     /* do the rest */
     for(off_t i = len_align; i < len; i++) {
         to[i] = from[i] ^ key[i%keylen];
@@ -125,22 +92,13 @@ void do_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off
     data_ptr from_wptr = (data_ptr)from;
     data_ptr key_wptr = (data_ptr)key;
     off_t word_size = sizeof(word_type);
-    int sse2 = 0;
-
-
-#ifdef _SSE2
-    __builtin_cpu_init ();
-    sse2  = __builtin_cpu_supports("sse2");
-    if(sse2)
-        word_size = sizeof(__m128i);
-#endif
 
     /* First simple case : key is smaller than word size and word_size%keysize == 0 */
     if (keylen <= word_size && word_size%keylen == 0) {
         realkey = (uint8_t *)memalign(16, word_size);
         for(int i = 0; i<(word_size/keylen); i++)
             memcpy(&realkey[i*keylen], key, keylen);
-        do_simple_xor(sse2, from, to, len, realkey, word_size);
+        do_simple_xor(from, to, len, realkey, word_size);
         free(realkey);
         return;
     }
