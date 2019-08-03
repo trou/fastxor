@@ -49,6 +49,19 @@ int hex2bin(const char *hex, int len, uint8_t *bin)
     return i;
 }
 
+int gcd(int m, int n) {
+  int tmp;
+  while (m) {
+    tmp = m;
+    m = n % m;
+    n = tmp;
+  }
+  return n;
+}
+
+int lcm(int m, int n) { return m / gcd(m, n) * n; }
+
+
 void do_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off_t keylen)
 {
 #ifdef _SSE2
