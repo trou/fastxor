@@ -119,8 +119,61 @@ void do_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off
 next:
 #else
 #endif
-    for(off_t i = 0; i < len; i++) {
-        to[i] = from[i] ^ key[i%keylen];
+
+/* Need to define WSIZE so that if __WORDSIZE is not defined, WSIZZ will be 0 */
+#define WSIZE __WORDSIZE
+#if WSIZE == 64
+    typedef unsigned long long *data_ptr;
+#else
+    typedef unsigned long *data_ptr;
+#endif
+    data_ptr to_wptr = (data_ptr)to;
+    data_ptr from_wptr = (data_ptr)from;
+    data_ptr key_wptr = NULL;
+    off_t word_size = sizeof(*to_wptr);
+
+    if(keylen < word_size) {
+        int size = lcm(word_size, keylen);
+        realkey = (uint8_t *)memalign(16, size);
+        printf("Key is too short, spanning to %d bytes\n", size);
+        for(int i = 0; i < size/keylen; i++)
+            memcpy(realkey+i*keylen, key, keylen);
+        keylen = size;
+        key_wptr = (data_ptr)realkey;
+    } else {
+        key_wptr = (data_ptr)key;
+    }
+
+    off_t keylen_in_words = keylen/word_size;
+    off_t key_remain = keylen%word_size;
+
+    printf("Using word_size=%ld, remaining: %ld\n", word_size, key_remain);
+    /* If we have a nice key len, we can xor directly word by word*/
+    if (key_remain == 0) {
+        for(off_t i = 0; i < len/word_size; i++) {
+            to_wptr[i] = from_wptr[i] ^ key_wptr[i%keylen_in_words];
+        }
+    } else {
+        off_t i, j;
+        uint8_t *end = to+len;
+        uint8_t *start = to;
+        printf("'Slow' path: keylen = %d, keylen_in_words = %d\n", keylen, keylen_in_words);
+
+        while((uint8_t *)to_wptr < end) {
+            /* Do the words */
+            for(i = 0; i < keylen_in_words && (uint8_t *)to_wptr < end; i++) {
+                *to_wptr++ = *from_wptr++ ^ key_wptr[i];
+            }
+            printf("%x\n", (uint8_t*)to_wptr-start);
+            /* Remaining bytes */
+            to = (uint8_t *)to_wptr;
+            from = (uint8_t *)from_wptr;
+            for(j = 0; j < key_remain && (&to[j]) < end; j++)
+                to[j] = from[j] ^ key[i*word_size+j];
+            to_wptr = (data_ptr)(to+j);
+            printf("lol :%x\n", (uint8_t*)to_wptr-start);
+            from_wptr = (data_ptr)(from+j);
+        }
     }
     return;
 }
@@ -183,7 +236,7 @@ int main(int argc, char *argv[])
             errmsg(NULL);
         }
     }
-    
+
     if(argc-optind != 2)    {
         free(key);
         errmsg("Missing file arguments");
