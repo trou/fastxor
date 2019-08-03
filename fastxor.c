@@ -34,9 +34,9 @@ void errmsg(const char *error)
     exit(EXIT_FAILURE);
 }
 
-int hex2bin(const char *hex, int len, uint8_t *bin)
+size_t hex2bin(const char *hex, size_t len, uint8_t *bin)
 {
-    int i;
+    size_t i;
     char tmp[3] = {0};
 
     // Reset errno
@@ -45,11 +45,11 @@ int hex2bin(const char *hex, int len, uint8_t *bin)
         memcpy(tmp, &hex[2 * i], 2);
         // Check we have hex
         if (!isxdigit(tmp[0]) || !isxdigit(tmp[1])) {
-            return -1;
+            return (size_t)-1;
         }
-        bin[i] = strtol(tmp, NULL, 16);
+        bin[i] = (uint8_t)strtol(tmp, NULL, 16);
         if (errno) {
-            return -1;
+            return (size_t)-1;
         }
     }
     return i;
@@ -67,9 +67,9 @@ int gcd(int m, int n) {
 
 int lcm(int m, int n) { return m / gcd(m, n) * n; }
 
-void do_simple_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off_t keylen)
+void do_simple_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, size_t keylen)
 {
-    off_t len_align = len-(len%keylen);
+    size_t len_align = len-(len%keylen);
     data_ptr to_wptr = (data_ptr)to;
     data_ptr from_wptr = (data_ptr)from;
     data_ptr from_end = (data_ptr)(from+len_align);
@@ -79,34 +79,34 @@ void do_simple_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *k
         *to_wptr++ = *from_wptr++ ^ key_word;
 
     /* do the rest */
-    for(off_t i = len_align; i < len; i++) {
+    for(size_t i = len_align; i < len; i++) {
         to[i] = from[i] ^ key[i%keylen];
     }
     return;
 }
 
-void do_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off_t keylen)
+void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, size_t keylen)
 {
     uint8_t *realkey = NULL;
     data_ptr to_wptr = (data_ptr)to;
     data_ptr from_wptr = (data_ptr)from;
-    data_ptr key_wptr = (data_ptr)key;
-    off_t word_size = sizeof(word_type);
+    const data_ptr key_wptr = (data_ptr)key;
+    size_t word_size = sizeof(word_type);
 
     /* First simple case : key is smaller than word size and word_size%keysize == 0 */
     if (keylen <= word_size && word_size%keylen == 0) {
         realkey = (uint8_t *)memalign(16, word_size);
-        for(int i = 0; i<(word_size/keylen); i++)
+        for(size_t i = 0; i<(word_size/keylen); i++)
             memcpy(&realkey[i*keylen], key, keylen);
         do_simple_xor(from, to, len, realkey, word_size);
         free(realkey);
         return;
     }
 
-    off_t keylen_in_words = keylen/word_size;
-    off_t key_remain = keylen%word_size;
+    size_t keylen_in_words = keylen/word_size;
+    size_t key_remain = keylen%word_size;
 
-    off_t i, j;
+    size_t i, j;
     uint8_t *end = to+len;
     printf("'Slow' path: keylen = %ld, keylen_in_words = %ld, rem=%ld\n", keylen, keylen_in_words, key_remain);
 
@@ -129,9 +129,9 @@ void do_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off
 int main(int argc, char *argv[])
 {
     uint8_t *key = NULL, *mapped = NULL, *output_map = NULL;
-    int hex_keylen = 0, opt, keylen = 0;
-    int verb = 0, fd;
-    off_t file_size;
+    size_t hex_keylen = 0, keylen = 0;
+    int verb = 0, fd, opt;
+    size_t file_size;
 
     while ((opt = getopt(argc, argv, "hvx:f:")) != -1) {
         switch (opt) {
@@ -146,7 +146,7 @@ int main(int argc, char *argv[])
                 errmsg("malloc failed");
             }
             keylen = hex2bin(optarg, hex_keylen, key);
-            if (keylen <= 0) {
+            if (keylen == 0 || keylen == (size_t) -1) {
                 free(key);
                 if (errno) {
                     perror("Conversion failed !");
@@ -160,8 +160,8 @@ int main(int argc, char *argv[])
             if(fd < 0) {
                 errmsg("Could not open keyfile");
             }
-            keylen = lseek(fd, 0, SEEK_END);
-            if(keylen == 0 || keylen == (off_t) -1) {
+            keylen = (size_t)lseek(fd, 0, SEEK_END);
+            if(keylen == 0 || keylen == (size_t) -1) {
                 errmsg("Error getting key file size or empty file");
             }
             mapped = mmap(0, keylen, PROT_READ, MAP_PRIVATE, fd, 0);
@@ -195,7 +195,7 @@ int main(int argc, char *argv[])
         free(key);
         errmsg("Could not open input file");
     }
-    file_size = lseek(input_fd, 0, SEEK_END);
+    file_size = (size_t)lseek(input_fd, 0, SEEK_END);
     mapped = mmap(0, file_size, PROT_READ, MAP_PRIVATE, input_fd, 0);
     if(mapped == MAP_FAILED) {
         free(key);
@@ -208,7 +208,7 @@ int main(int argc, char *argv[])
         errmsg("Could not open output file");
     }
     /* Set file size */
-    if(ftruncate(output_fd, file_size) < 0) {
+    if(ftruncate(output_fd, (off_t)file_size) < 0) {
         free(key);
         errmsg("could not resize output file");
     }
@@ -218,6 +218,14 @@ int main(int argc, char *argv[])
         errmsg("could not mmap output file");
     }
 
+    if (verb) {
+        printf("Key (%ld bytes): ", keylen);
+        for (size_t i = 0; i < keylen; i++) {
+            printf("%02x", key[i]);
+        }
+        printf("\n");
+    }
+
     do_xor(mapped, output_map, file_size, key, keylen);
 
     munmap(mapped, file_size);
@@ -225,13 +233,6 @@ int main(int argc, char *argv[])
     munmap(output_map, file_size);
     close(output_fd);
 
-    if (verb) {
-        printf("Key (%d bytes): ", keylen);
-        for (int i = 0; i < keylen; i++) {
-            printf("%02x", key[i]);
-        }
-        printf("\n");
-    }
 
     free(key);
     return EXIT_SUCCESS;
