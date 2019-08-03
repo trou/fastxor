@@ -92,7 +92,7 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
     uint8_t *realkey = NULL;
     data_ptr to_wptr = (data_ptr)to;
     data_ptr from_wptr = (data_ptr)from;
-    const data_ptr key_wptr = (data_ptr)key;
+    data_ptr key_wptr = (data_ptr)key;
     size_t word_size = sizeof(word_type);
 
     /* First simple case : key is smaller than word size and word_size%keysize == 0 */
@@ -105,19 +105,42 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
         return;
     }
 
+    /* Check if the necessary size to get aligned copies
+     * of the key is not too big
+     * 512K should fits easily in most caches */
+    size_t lcm_size = lcm(keylen, word_size);
+
+    if  (lcm_size < 512*1024) {
+        if(verbose) {
+            printf("lcm_size is %ld, doing copies of key\n", lcm_size);
+        }
+        realkey = (uint8_t *)memalign(16, lcm_size);
+        for(size_t i = 0; i<(lcm_size/keylen); i++)
+            memcpy(&realkey[i*keylen], key, keylen);
+        key = realkey;
+        key_wptr = (data_ptr) realkey;
+        keylen = lcm_size;
+    } else {
+        if(verbose) {
+            printf("lcm_size is %ld, too big for copies\n", lcm_size);
+        }
+    }
+
     size_t keylen_in_words = keylen/word_size;
-    size_t key_remain = keylen%word_size;
 
     size_t i, j;
     uint8_t *end = to+len;
-    if(verbose) {
-        printf("'Slow' path: keylen = %ld, keylen_in_words = %ld, rem=%ld\n", keylen, keylen_in_words, key_remain);
-    }
 
     /* As we must ensure aligned accesses, compute the number
      * of bytes we must do one by one to reach the next word
      * boundary */
-    size_t next_word = keylen-lcm(keylen, word_size);
+    size_t next_word = lcm(keylen, word_size)-(keylen-(keylen%word_size));
+
+    if(verbose) {
+        printf("'Slow' path: keylen = %ld, keylen_in_words = %ld, rem=%ld, next_word=%ld\n",
+                keylen, keylen_in_words, keylen%word_size, next_word);
+    }
+
     while((uint8_t *)to_wptr < end) {
         size_t keystart;
 
@@ -138,6 +161,8 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
         to_wptr = (data_ptr)(to+j);
         from_wptr = (data_ptr)(from+j);
     }
+
+    free(realkey);
     return;
 }
 
