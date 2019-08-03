@@ -64,9 +64,9 @@ int lcm(int m, int n) { return m / gcd(m, n) * n; }
 
 void do_xor(const uint8_t *from, uint8_t *to, off_t len, const uint8_t *key, off_t keylen)
 {
+    uint8_t *realkey = NULL;
 #ifdef _SSE2
     int sse2 = 0;
-    uint8_t *realkey = NULL;
 
     /* Heuristic, don't optimize for files smaller than 1 MB */
     if(len < 1024*1024)
