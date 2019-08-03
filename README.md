@@ -1,7 +1,4 @@
-Dumb tool to xor files.
-
-Supports SSE2 for some cases.
-
+Dumb (but fast) tool to xor files.
 
 ```console
 $ ./fastxor -h
