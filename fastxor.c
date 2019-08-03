@@ -57,8 +57,8 @@ size_t hex2bin(const char *hex, size_t len, uint8_t *bin)
     return i;
 }
 
-int gcd(int m, int n) {
-  int tmp;
+size_t gcd(size_t m, size_t n) {
+  size_t tmp;
   while (m) {
     tmp = m;
     m = n % m;
@@ -67,7 +67,7 @@ int gcd(int m, int n) {
   return n;
 }
 
-int lcm(int m, int n) { return m / gcd(m, n) * n; }
+size_t lcm(size_t m, size_t n) { return m / gcd(m, n) * n; }
 
 void do_simple_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, size_t keylen)
 {
@@ -114,16 +114,27 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
         printf("'Slow' path: keylen = %ld, keylen_in_words = %ld, rem=%ld\n", keylen, keylen_in_words, key_remain);
     }
 
+    /* As we must ensure aligned accesses, compute the number
+     * of bytes we must do one by one to reach the next word
+     * boundary */
+    size_t next_word = keylen-lcm(keylen, word_size);
     while((uint8_t *)to_wptr < end) {
+        size_t keystart;
+
         /* Do the words */
         for(i = 0; i < keylen_in_words && (uint8_t *)to_wptr < end; i++) {
             *to_wptr++ = *from_wptr++ ^ key_wptr[i];
         }
-        /* Remaining bytes */
+
+        /* Remaining bytes + realign to word boundary */
         to = (uint8_t *)to_wptr;
         from = (uint8_t *)from_wptr;
-        for(j = 0; j < key_remain && (&to[j]) < end; j++)
-            to[j] = from[j] ^ key[i*word_size+j];
+        keystart = i*word_size;
+
+        for(j = 0; j < next_word && (&to[j]) < end; j++)
+            to[j] = from[j] ^ key[(keystart+j)%keylen];
+
+        /* We should be aligned */
         to_wptr = (data_ptr)(to+j);
         from_wptr = (data_ptr)(from+j);
     }
