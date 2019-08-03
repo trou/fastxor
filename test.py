@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from binascii import hexlify
+import sys
 import tempfile
 import os
 import subprocess
@@ -41,6 +42,8 @@ def do_test(data, key):
         fx = py
     fxf = do_fastxor_file(data, key)
     print("%r\t%r\t%6d data\t%6d key" % (py==fx, py==fxf, len(data), len(key), ))
+    if py != fx or py != fxf:
+        sys.exit(1)
 
 
 do_test(b"a", b"1")
