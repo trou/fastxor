@@ -69,6 +69,20 @@ size_t gcd(size_t m, size_t n) {
 
 size_t lcm(size_t m, size_t n) { return m / gcd(m, n) * n; }
 
+uint8_t *span_key(const uint8_t *key, const size_t keylen, const size_t target_len)
+{
+    uint8_t *realkey = NULL;
+
+    realkey = (uint8_t *)memalign(16, target_len);
+    if(!realkey) {
+        errmsg("malloc failed");
+    }
+
+    for(size_t i = 0; i<(target_len/keylen); i++)
+        memcpy(&realkey[i*keylen], key, keylen);
+    return realkey;
+}
+
 void do_simple_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, size_t keylen)
 {
     size_t len_align = len-(len%keylen);
@@ -97,9 +111,7 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
 
     /* First simple case : key is smaller than word size and word_size%keysize == 0 */
     if (keylen <= word_size && word_size%keylen == 0) {
-        realkey = (uint8_t *)memalign(16, word_size);
-        for(size_t i = 0; i<(word_size/keylen); i++)
-            memcpy(&realkey[i*keylen], key, keylen);
+        realkey = span_key(key, keylen, word_size);
         do_simple_xor(from, to, len, realkey, word_size);
         free(realkey);
         return;
@@ -114,9 +126,7 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
         if(verbose) {
             fprintf(stderr, "lcm_size is %ld, doing copies of key\n", lcm_size);
         }
-        realkey = (uint8_t *)memalign(16, lcm_size);
-        for(size_t i = 0; i<(lcm_size/keylen); i++)
-            memcpy(&realkey[i*keylen], key, keylen);
+        realkey = span_key(key, keylen, lcm_size);
         key = realkey;
         key_wptr = (data_ptr) realkey;
         keylen = lcm_size;
@@ -240,6 +250,9 @@ void do_buffers(uint8_t *key, size_t keylen, char *input, char *output)
     /* Make buffer a multiple of word size */
     size_t lcm_size = lcm(keylen, word_size);
     buff_len = lcm_size < 1024*1024 ? lcm_size : 1024*1024;
+    if(verbose){
+        fprintf(stderr, "buff_len: %d\n", buff_len);
+    }
 
     buffer_in = (uint8_t *)malloc(buff_len);
     buffer_out = (uint8_t *)malloc(buff_len);
