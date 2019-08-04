@@ -1,4 +1,4 @@
-COPTS=-Wall -O3 -ggdb -Wextra -pedantic -Wconversion -Wsign-conversion
+COPTS=-Wall -O3 -ggdb -Wextra -pedantic -Wconversion -Wsign-conversion -march=native
 
 fastxor: fastxor.c
 	$(CC) $(COPTS) -o fastxor $<
