@@ -146,7 +146,7 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
      * boundary */
     size_t next_word = lcm(keylen, word_size)-(keylen-(keylen%word_size));
 
-    if(verbose) {
+    if(verbose && (keylen%word_size)) {
         fprintf(stderr, "'Slow' path: keylen = %ld, keylen_in_words = %ld, rem=%ld, next_word=%ld\n",
                 keylen, keylen_in_words, keylen%word_size, next_word);
     }
