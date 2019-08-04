@@ -249,9 +249,10 @@ void do_buffers(uint8_t *key, size_t keylen, char *input, char *output)
 
     /* Make buffer a multiple of word size */
     size_t lcm_size = lcm(keylen, word_size);
-    buff_len = lcm_size < 1024*1024 ? lcm_size : 1024*1024;
+    size_t big_lcm = lcm(lcm_size, 1024*1024);
+    buff_len = big_lcm < 2*1024*1024 ? big_lcm : 2*1024*1024;
     if(verbose){
-        fprintf(stderr, "buff_len: %d\n", buff_len);
+        fprintf(stderr, "lcm_size: %ld, big_lcm:%ld, buff_len: %ld\n", lcm_size, big_lcm, buff_len);
     }
 
     buffer_in = (uint8_t *)malloc(buff_len);
@@ -351,12 +352,12 @@ int main(int argc, char *argv[])
 
     if(argc-optind != 2)    {
         do_buffers(key, keylen, "-", "-");
-    }
-
-    if(force_buffered || !strcmp(argv[optind], "-") || !strcmp(argv[optind+1], "-")) {
-        do_buffers(key, keylen, argv[optind], argv[optind+1]);
     } else {
-        do_mmap(key, keylen, argv[optind], argv[optind+1]);
+        if(force_buffered || !strcmp(argv[optind], "-") || !strcmp(argv[optind+1], "-")) {
+            do_buffers(key, keylen, argv[optind], argv[optind+1]);
+        } else {
+            do_mmap(key, keylen, argv[optind], argv[optind+1]);
+        }
     }
 
 
