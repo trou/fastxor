@@ -32,7 +32,7 @@ void errmsg(const char *error)
         fprintf(stderr, "Error: %s\n", error);
     }
     fprintf(stderr,
-            "Usage: fastxor -x hexkey|-f file_key input_file ouput_file\n");
+            "Usage: fastxor -x hexkey|-f file_key [input_file ouput_file]\n");
     exit(EXIT_FAILURE);
 }
 
