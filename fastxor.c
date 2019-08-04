@@ -340,10 +340,6 @@ int main(int argc, char *argv[])
         errmsg("Missing key, or empty key");
     }
 
-    if(argc-optind != 2)    {
-        free(key);
-        errmsg("Missing file arguments");
-    }
 
     if (verbose) {
         fprintf(stderr, "Key (%ld bytes): ", keylen);
@@ -353,6 +349,9 @@ int main(int argc, char *argv[])
         fprintf(stderr, "\n");
     }
 
+    if(argc-optind != 2)    {
+        do_buffers(key, keylen, "-", "-");
+    }
 
     if(force_buffered || !strcmp(argv[optind], "-") || !strcmp(argv[optind+1], "-")) {
         do_buffers(key, keylen, argv[optind], argv[optind+1]);
