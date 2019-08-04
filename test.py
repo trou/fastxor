@@ -67,9 +67,9 @@ do_test(b"abcd", b"1234")
 do_test(b"abcd"*8, b"123")
 for i in range(0, 100):
     # test with shorted key length (to avoid max cmd line length pbs)
-    data = os.urandom(rand(1, 1000000))
-    do_test(data, os.urandom(rand(1, 10000)))
+    data = os.urandom(rand(1, 100000))
+    do_test(data, os.urandom(rand(1, 1000)))
     # and long, for file
-    key = os.urandom(rand(1, 1000000))
+    key = os.urandom(rand(10000, 50000))
     do_test(data, key)
     do_test(key, data)
