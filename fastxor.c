@@ -14,7 +14,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-/* Need to define WSIZE so that if __WORDSIZE is not defined, WSIZZ will be 0 */
+/* Need to define WSIZE so that if __WORDSIZE is not defined, WSIZE will be 0 */
 #define WSIZE __WORDSIZE
 #if WSIZE == 64
     typedef unsigned long long *data_ptr;
@@ -119,7 +119,7 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
 
     /* Check if the necessary size to get aligned copies
      * of the key is not too big
-     * 512K should fits easily in most caches */
+     * 512K should fit easily in most caches */
     size_t lcm_size = lcm(keylen, word_size);
 
     if  (lcm_size < 512*1024) {
