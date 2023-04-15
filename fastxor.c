@@ -14,6 +14,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#ifdef USE_SSE
+#include <emmintrin.h>
+typedef __m128i *data_ptr;
+typedef __m128i word_type;
+#else
 /* Need to define WSIZE so that if __WORDSIZE is not defined, WSIZE will be 0 */
 #define WSIZE __WORDSIZE
 #if WSIZE == 64
@@ -22,6 +27,7 @@
 #else
     typedef unsigned long *data_ptr;
     typedef unsigned long word_type;
+#endif
 #endif
 
 int verbose = 0;
