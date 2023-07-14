@@ -75,7 +75,7 @@ size_t gcd(size_t m, size_t n) {
 
 size_t lcm(size_t m, size_t n) { return m / gcd(m, n) * n; }
 
-uint8_t *span_key(const uint8_t *key, const size_t keylen, const size_t target_len)
+uint8_t *span_key(uint8_t *key, const size_t keylen, const size_t target_len)
 {
     uint8_t *realkey = NULL;
 
@@ -89,7 +89,7 @@ uint8_t *span_key(const uint8_t *key, const size_t keylen, const size_t target_l
     return realkey;
 }
 
-void do_simple_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, size_t keylen)
+void do_simple_xor(uint8_t *from, uint8_t *to, size_t len, uint8_t *key, size_t keylen)
 {
     size_t len_align = len-(len%keylen);
     data_ptr to_wptr = (data_ptr)to;
@@ -107,7 +107,7 @@ void do_simple_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *
     return;
 }
 
-void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, size_t keylen)
+void do_xor(uint8_t *from, uint8_t *to, size_t len, uint8_t *key, size_t keylen)
 {
     uint8_t *realkey = NULL;
     data_ptr to_wptr = (data_ptr)to;
@@ -130,7 +130,7 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
 
     if  (lcm_size < 512*1024) {
         if(verbose) {
-            fprintf(stderr, "lcm_size is %ld, doing copies of key\n", lcm_size);
+            fprintf(stderr, "lcm_size is %zu, doing copies of key\n", lcm_size);
         }
         realkey = span_key(key, keylen, lcm_size);
         key = realkey;
@@ -138,7 +138,7 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
         keylen = lcm_size;
     } else {
         if(verbose) {
-            fprintf(stderr, "lcm_size is %ld, too big for copies\n", lcm_size);
+            fprintf(stderr, "lcm_size is %zu, too big for copies\n", lcm_size);
         }
     }
 
@@ -153,7 +153,7 @@ void do_xor(const uint8_t *from, uint8_t *to, size_t len, const uint8_t *key, si
     size_t next_word = lcm(keylen, word_size)-(keylen-(keylen%word_size));
 
     if(verbose && (keylen%word_size)) {
-        fprintf(stderr, "'Slow' path: keylen = %ld, keylen_in_words = %ld, rem=%ld, next_word=%ld\n",
+        fprintf(stderr, "'Slow' path: keylen = %zu, keylen_in_words = %zu, rem=%zu, next_word=%zu\n",
                 keylen, keylen_in_words, keylen%word_size, next_word);
     }
 
@@ -258,11 +258,11 @@ void do_buffers(uint8_t *key, size_t keylen, char *input, char *output)
     size_t big_lcm = lcm(lcm_size, 1024*1024);
     buff_len = big_lcm < 2*1024*1024 ? big_lcm : 2*1024*1024;
     if(verbose){
-        fprintf(stderr, "lcm_size: %ld, big_lcm:%ld, buff_len: %ld\n", lcm_size, big_lcm, buff_len);
+        fprintf(stderr, "lcm_size: %zu, big_lcm:%zu, buff_len: %zu\n", lcm_size, big_lcm, buff_len);
     }
 
-    buffer_in = (uint8_t *)malloc(buff_len);
-    buffer_out = (uint8_t *)malloc(buff_len);
+    buffer_in = (uint8_t *)aligned_alloc(4096, buff_len);
+    buffer_out = (uint8_t *)aligned_alloc(4096, buff_len);
     if(buffer_in == NULL || buffer_out == NULL) {
         errmsg("buffer malloc failed");
     }
@@ -349,7 +349,7 @@ int main(int argc, char *argv[])
 
 
     if (verbose) {
-        fprintf(stderr, "Key (%ld bytes): ", keylen);
+        fprintf(stderr, "Key (%zu bytes): ", keylen);
         for (size_t i = 0; i < keylen; i++) {
             fprintf(stderr, "%02x", key[i]);
         }
